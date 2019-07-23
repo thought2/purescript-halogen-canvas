@@ -4,19 +4,22 @@ import Prelude
 
 import CSS (CSS)
 import Data.Maybe (Maybe(..))
-import Data.Typelevel.Num (D2)
-import Data.Vec (Vec)
+import Data.Traversable (traverse_)
+import Data.Typelevel.Num (D2, d0, d1)
+import Data.Vec (Vec, (!!))
 import Effect (Effect)
+import Effect.Class (class MonadEffect)
 import Halogen as H
 import Halogen.HTML as HH
+import Halogen.HTML.Properties as HP
 import Web.DOM (Element)
+import Web.HTML (HTMLElement)
 
 -- CLASS
 
-class Draw a ctx where
+class Draw a ctx | a -> ctx where
   draw :: ctx -> a -> Effect Unit
-  getCtx :: a -> Element -> Effect ctx
-
+  getCtx :: a -> HTMLElement -> Effect (Maybe ctx)
 
 -- COMPONENT
 
@@ -31,22 +34,26 @@ type Input picture =
   , size :: Vec D2 Int
   }
 
-data Action
+data Action picture
   = Init
-  | GotRef Element
+  | HandleInput (Input picture)
 
 type HTML = forall action slots. HH.HTML action slots
 
+refLabel :: H.RefLabel
+refLabel = H.RefLabel "canvas"
+
 component
-  :: forall query picture output ctx m
+  :: forall picture query output ctx m
    . Draw picture ctx
+  => MonadEffect m
   => H.Component HH.HTML query (Input picture) output m
 component = H.mkComponent
   { initialState
   , render
   , eval: H.mkEval $ H.defaultEval
       { handleAction = handleAction
-      , initialize = Just Init
+      , receive = Just <<< HandleInput
       }
   }
 
@@ -63,23 +70,32 @@ initialState input =
 render :: forall picture ctx. State picture ctx -> HTML
 render { input : { size, css } } =
   HH.canvas
-    [
-    --  HH.ref (map GotRef)
-    --, HP.width
+    [ HP.ref refLabel
+    , HP.width $ size!!d0
+    , HP.height $ size!!d1
     ]
-
-
 
 -- COMPONENT ACTION
 
 handleAction
   :: forall picture ctx output m
-   . Action
-  -> H.HalogenM (State picture ctx) Action () output m Unit
+   . MonadEffect m
+  => Draw picture ctx
+  => Action picture
+  -> H.HalogenM (State picture ctx) (Action picture) () output m Unit
 handleAction = case _ of
-  Init -> pure unit
-    --{input} <- H.get
+  Init -> do
+    { input : {picture} } <- H.get
+    H.getHTMLElementRef refLabel >>= traverse_ \element -> do
 
-  GotRef el -> pure unit
-    --ctx <- H.liftEffect $ getContext input.picture el
-    --H.modify_ \st -> st { ctx = Just ctx }
+      maybeCtx <- H.liftEffect $ getCtx picture element
+      H.modify_ $ \st -> st { ctx = maybeCtx }
+      pure unit
+
+  HandleInput input -> do
+    {ctx} <- H.get
+    H.modify_ \st -> st { input = input }
+    case ctx of
+      Just ctx' -> H.liftEffect $ draw ctx' input.picture
+      Nothing -> pure unit
+    pure unit
