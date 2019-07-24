@@ -12,8 +12,6 @@ You can edit this file as you like.
     , "halogen"
     , "web-dom"
     , "sized-vectors"
-    , "debug"
-    , "foreign"
     , "halogen-css"
     ]
 , packages =
