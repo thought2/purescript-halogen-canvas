@@ -15,7 +15,7 @@ You can edit this file as you like.
     , "halogen-css"
     ]
 , packages =
-    ../packages.dhall
+    ./packages.dhall
 , sources =
     [ "src/**/*.purs", "test/**/*.purs" ]
 }
