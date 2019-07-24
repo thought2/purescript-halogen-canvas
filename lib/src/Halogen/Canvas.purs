@@ -1,4 +1,10 @@
-module Halogen.Canvas where
+module Halogen.Canvas
+  ( component
+  , class Draw
+  , draw
+  , Input
+  )
+where
 
 import Prelude
 
