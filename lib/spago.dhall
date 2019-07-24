@@ -3,7 +3,7 @@ Welcome to a Spago project!
 You can edit this file as you like.
 -}
 { name =
-    "my-project"
+    "halogen-canvas"
 , dependencies =
     [ "effect"
     , "console"
@@ -12,9 +12,12 @@ You can edit this file as you like.
     , "halogen"
     , "web-dom"
     , "sized-vectors"
+    , "debug"
+    , "foreign"
+    , "halogen-css"
     ]
 , packages =
-    ./packages.dhall
+    ../packages.dhall
 , sources =
     [ "src/**/*.purs", "test/**/*.purs" ]
 }
