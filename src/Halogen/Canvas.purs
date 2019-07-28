@@ -12,11 +12,10 @@ import Control.Monad.Maybe.Trans (MaybeT(..), runMaybeT)
 import Control.Monad.Maybe.Trans as MaybeT
 import Data.Int as Int
 import Data.Maybe (Maybe(..), maybe)
+import Data.Traversable (for)
 import Data.Typelevel.Num (D2, d0, d1)
 import Data.Vec (Vec, (!!))
-import Debug.Trace (spy)
 import Effect.Class (class MonadEffect)
-import Halogen (HalogenM)
 import Halogen as H
 import Halogen.Canvas.Renderer (Renderer)
 import Halogen.HTML as HH
@@ -122,7 +121,11 @@ handleAction cfg@{renderer} = case _ of
     state <- H.get
     H.modify_ _ { input = input }
 
-    case state.ctx of
-      Just ctx -> do
-        H.liftEffect $ renderer.render ctx input.picture
-      _ -> pure unit
+    _ <- for state.ctx \ctx -> do
+      when (state.input.size /= input.size) do
+        ctx' <- H.liftEffect $ renderer.onResize input.size ctx
+        H.modify_ _ { ctx = Just ctx' }
+
+      H.liftEffect $ renderer.render ctx input.picture
+
+    pure unit
