@@ -1,31 +1,30 @@
 module Halogen.Canvas
-  ( component
-  , class Draw
-  , draw
+  ( mkComponent
   , Input
+  , Vec2n
   )
 where
 
 import Prelude
 
 import CSS (CSS)
+import Control.Monad.Maybe.Trans (MaybeT(..), runMaybeT)
+import Control.Monad.Maybe.Trans as MaybeT
+import Data.Int as Int
 import Data.Maybe (Maybe(..), maybe)
 import Data.Typelevel.Num (D2, d0, d1)
 import Data.Vec (Vec, (!!))
-import Effect (Effect)
+import Debug.Trace (spy)
 import Effect.Class (class MonadEffect)
 import Halogen (HalogenM)
 import Halogen as H
+import Halogen.Canvas.Renderer (Renderer)
 import Halogen.HTML as HH
 import Halogen.HTML.CSS as HC
 import Halogen.HTML.Properties as HP
 import Web.HTML.HTMLCanvasElement (HTMLCanvasElement)
 import Web.HTML.HTMLCanvasElement as HTMLCanvasElement
-
--- CLASS
-
-class Draw a where
-  draw :: HTMLCanvasElement -> a -> Effect Unit
+import Web.HTML.HTMLElement (HTMLElement)
 
 -- CONSTANTS
 
@@ -34,31 +33,37 @@ refLabel = H.RefLabel "canvas"
 
 -- COMPONENT
 
-type State picture =
+type Vec2n = Vec D2 Number
+
+type Config ctx picture =
+  { renderer :: Renderer ctx picture
+  }
+
+type State ctx picture =
   { input :: Input picture
-  , ref :: Maybe HTMLCanvasElement
+  , ctx :: Maybe ctx
   }
 
 type Input picture =
   { picture :: picture
   , css :: Maybe CSS
-  , size :: Vec D2 Int
+  , size :: Vec2n
   }
 
 data Action picture
   = Init
   | HandleInput (Input picture)
 
-component
-  :: forall picture query output m
-   . Draw picture
-  => MonadEffect m
-  => H.Component HH.HTML query (Input picture) output m
-component = H.mkComponent
+mkComponent
+  :: forall ctx picture query output m
+   . MonadEffect m
+  => Config ctx picture
+  -> H.Component HH.HTML query (Input picture) output m
+mkComponent cfg = H.mkComponent
   { initialState
   , render
   , eval: H.mkEval $ H.defaultEval
-      { handleAction = handleAction
+      { handleAction = handleAction cfg
       , receive = Just <<< HandleInput
       , initialize = Just Init
       }
@@ -66,49 +71,58 @@ component = H.mkComponent
 
 -- COMPONENT INIT
 
-initialState :: forall picture . Input picture -> State picture
+initialState :: forall ctx picture . Input picture -> State ctx picture
 initialState input =
   { input
-  , ref : Nothing
+  , ctx : Nothing
   }
 
 -- COMPONENT RENDER
 
 type HTML = forall action slots. HH.HTML action slots
 
-render :: forall picture. State picture -> HTML
+render :: forall ctx picture. State ctx picture -> HTML
 render { input : { size, css } } =
   HH.canvas $
     [ HP.ref refLabel
-    , HP.width $ size!!d0
-    , HP.height $ size!!d1
+    , HP.width $ sizeInt!!d0
+    , HP.height $ sizeInt!!d1
     ] <>
     ( maybe mempty (HC.style >>> pure) css
     )
+    where
+      sizeInt = size <#> Int.floor
 
 -- COMPONENT ACTION
 
-getCanvasElement :: forall a b c d e. HalogenM a b c d e (Maybe HTMLCanvasElement)
-getCanvasElement = do
-  maybeElement <- H.getHTMLElementRef refLabel
-  pure (maybeElement >>= HTMLCanvasElement.fromHTMLElement)
-
 handleAction
-  :: forall picture output m
+  :: forall ctx picture output m
    . MonadEffect m
-  => Draw picture
-  => Action picture
-  -> H.HalogenM (State picture) (Action picture) () output m Unit
-handleAction = case _ of
-  Init -> do
-    maybeCanvasElement <- getCanvasElement
-    H.modify_ _ { ref = maybeCanvasElement }
+  => Config ctx picture
+  -> Action picture
+  -> H.HalogenM (State ctx picture) (Action picture) () output m Unit
+handleAction cfg@{renderer} = case _ of
+  Init -> map (const unit) $ runMaybeT do
     { input } <- H.get
-    handleAction (HandleInput input)
+
+    htmlElem :: HTMLElement
+      <- MaybeT $ H.getHTMLElementRef refLabel
+
+    canvasElem :: HTMLCanvasElement
+      <- MaybeT $ pure $ HTMLCanvasElement.fromHTMLElement htmlElem
+
+    ctx :: ctx
+      <- MaybeT $ H.liftEffect $ renderer.init input.size canvasElem
+
+    H.modify_ _ { ctx = Just ctx }
+    MaybeT.lift $ handleAction cfg (HandleInput input)
     pure unit
+
   HandleInput input -> do
+    state <- H.get
     H.modify_ _ { input = input }
-    { input : { picture }, ref } <- H.get
-    case ref of
-      Just canvasElement -> H.liftEffect $ draw canvasElement picture
+
+    case state.ctx of
+      Just ctx -> do
+        H.liftEffect $ renderer.render ctx input.picture
       _ -> pure unit

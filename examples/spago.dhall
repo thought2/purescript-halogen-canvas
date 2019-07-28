@@ -14,6 +14,7 @@ You can edit this file as you like.
     , "sized-vectors"
     , "debug"
     , "halogen-css"
+    , "canvas"
     ]
 , packages =
     ../packages.dhall
